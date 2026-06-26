@@ -1,6 +1,18 @@
 # Local .terraform directories
 .terraform/
 
+# Environment files with secrets (subscription ids, endpoints, keys)
+.env
+*.env
+!*.env.sample
+!env.sample
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
 # .tfstate files
 *.tfstate
 *.tfstate.*

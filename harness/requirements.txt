@@ -1,0 +1,15 @@
+# Foundry Hosted Agent server (Responses protocol). Pin to a known-good beta.
+azure-ai-agentserver-agentframework==1.0.0b3
+
+# Microsoft Agent Framework core (use --pre for the prerelease packages).
+agent-framework --pre
+
+# Built-in harness tools (LocalShellTool). Provides the shell harness.
+agent-framework-tools --pre
+
+# Authentication via managed identity / DefaultAzureCredential.
+azure-identity>=1.15.0
+
+# Observability - traces flow to the Application Insights resource Foundry
+# injects via environment variables.
+azure-monitor-opentelemetry>=1.0.0

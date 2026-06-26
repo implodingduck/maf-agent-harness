@@ -1,0 +1,25 @@
+name: maf-agent-harness
+description: |
+    A Microsoft Agent Framework agent harness with an approval-gated local shell
+    tool and context compaction, served over the Responses protocol.
+metadata:
+    tags:
+        - Azure AI AgentServer
+        - Microsoft Agent Framework
+        - Agent Harness
+template:
+    name: maf-agent-harness
+    kind: hosted
+    protocols:
+        - protocol: responses
+    environment_variables:
+        - name: AZURE_OPENAI_ENDPOINT
+          value: ${AZURE_OPENAI_ENDPOINT}
+        - name: AZURE_OPENAI_CHAT_DEPLOYMENT_NAME
+          value: "{{chat}}"
+        - name: AGENT_NAME
+          value: maf-agent-harness
+resources:
+    - kind: model
+      id: FW-Kimi-K2.6
+      name: chat
