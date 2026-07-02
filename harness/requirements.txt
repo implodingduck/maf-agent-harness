@@ -1,15 +1,22 @@
-# Foundry Hosted Agent server (Responses protocol). Pin to a known-good beta.
-azure-ai-agentserver-agentframework==1.0.0b3
+# Microsoft Agent Framework (umbrella package). Pulls in agent-framework-core
+# plus the provider integrations, including agent_framework.foundry
+# (FoundryChatClient) used to talk to the Azure AI Foundry project.
+agent-framework==1.9.0
 
-# Microsoft Agent Framework core (use --pre for the prerelease packages).
-agent-framework --pre
+# Shell tool used by the harness (LocalShellTool). Separate package; provides
+# agent_framework_tools.shell. Required for create_harness_agent(shell_executor=...).
+agent-framework-tools==1.0.0a260424
 
-# Built-in harness tools (LocalShellTool). Provides the shell harness.
-agent-framework-tools --pre
+# Textual-based console UI used by the vendored harness console package.
+textual>=6.2.1
+rich>=13.7.1
 
-# Authentication via managed identity / DefaultAzureCredential.
+# Azure auth (AzureCliCredential locally; DefaultAzureCredential in other envs).
 azure-identity>=1.15.0
 
-# Observability - traces flow to the Application Insights resource Foundry
-# injects via environment variables.
-azure-monitor-opentelemetry>=1.0.0
+# Loads FOUNDRY_PROJECT_ENDPOINT / FOUNDRY_MODEL from a local .env file.
+python-dotenv>=1.0.0
+
+# Used by the bundled `pptx` skill (skills/pptx) to build PowerPoint decks from a
+# JSON slide description. The skill's script is run by the agent via the shell tool.
+python-pptx>=1.0.0

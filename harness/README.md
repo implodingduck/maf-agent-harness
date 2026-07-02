@@ -1,55 +1,57 @@
 # Agent harness
 
 A [Microsoft Agent Framework](https://github.com/microsoft/agent-framework)
-**agent harness** packaged as a [Foundry Hosted Agent](https://learn.microsoft.com/en-us/azure/foundry/agents/concepts/hosted-agents).
-It exposes an approval-gated local shell tool and uses context compaction, and
-serves the **Responses** protocol via `azure.ai.agentserver`.
+**agent harness** built on `create_harness_agent`, talking to an
+[Azure AI Foundry](https://learn.microsoft.com/en-us/azure/ai-foundry/) project
+via `FoundryChatClient`. It is a lean starter inspired by the official
+[harness sample](https://github.com/microsoft/agent-framework/tree/main/python/samples/02-agents/harness),
+trimmed to the essentials and driven by a simple async REPL (no Textual UI).
+
+`create_harness_agent` assembles a batteries-included agent: automatic tool
+calling, per-service-call history persistence, context-window compaction, a todo
+list for planning, plan/execute mode tracking, web search, and tool-approval
+handling. This starter additionally wires a **local shell tool**
+(`LocalShellTool` from `agent-framework-tools`) so the agent can run shell
+commands and probe its environment. Every command is gated behind an approval
+prompt the REPL surfaces on the terminal.
 
 ## Layout
 
 | File | Purpose |
 | --- | --- |
-| `main.py` | Builds the agent (shell harness + compaction) and starts the hosted server. |
-| `requirements.txt` | Python dependencies (`agent-framework`, `agent-framework-tools`, agent server). |
-| `Dockerfile` | Container image; serves the Responses protocol on port `8088`. |
-| `agent.yaml` | Hosted agent definition (protocol, env vars, model resource) for `azd`. |
-| `.env.sample` | Local environment variables. |
-
-## Harness building blocks
-
-- **Local shell with approvals** — `LocalShellTool(mode="stateless",
-  approval_mode="always_require")`. Every command surfaces as an approval
-  request before it runs; approval is the security boundary. Stateless mode is
-  used because a hosted agent serves many isolated sessions.
-- **Context compaction** — `InMemoryHistoryProvider` + `SlidingWindowStrategy`
-  keep long sessions within the model's token budget.
+| `harness_agent.py` | Builds the harness agent (shell tool + Foundry client) and runs the REPL. |
+| `requirements.txt` | Python dependencies (`agent-framework`, `agent-framework-tools`). |
+| `.env.sample` | Local environment variables (`FOUNDRY_PROJECT_ENDPOINT`, `FOUNDRY_MODEL`). |
 
 ## Run locally
 
 ```bash
 python -m venv .venv && source .venv/bin/activate
-pip install --pre -r requirements.txt
-cp .env.sample .env   # fill in AZURE_OPENAI_ENDPOINT + deployment name
-az login              # DefaultAzureCredential uses your CLI login locally
-python main.py        # serves http://localhost:8088 (/health for readiness)
+pip install -r requirements.txt
+cp .env.sample .env   # fill in FOUNDRY_PROJECT_ENDPOINT + FOUNDRY_MODEL
+az login              # AzureCliCredential uses your CLI login
+python harness_agent.py
 ```
 
-## Build & push the image
+Then type a task at the `you>` prompt. When the agent wants to run a shell
+command you'll get an `Approve ...? [y/N]` prompt. Type `/exit` (or `/quit`) to
+leave.
 
-The Foundry infrastructure (AI Foundry account/project, model deployment,
-Azure Container Registry, agent identity) is provisioned in [`../terraform`](../terraform).
-Use the `container_registry_login_server` output as the target registry:
+The values come from the Foundry infrastructure in
+[`../terraform`](../terraform): use the `foundry_project_endpoint` output for
+`FOUNDRY_PROJECT_ENDPOINT` and `var.model_deployment_name` (the
+`chat_deployment_name` output) for `FOUNDRY_MODEL`. Your identity needs
+data-plane access to call the model (for example the **Foundry User** role on the
+project); the Terraform currently grants model access to the agent identity, so
+add a grant for your own user for local testing.
 
-```bash
-ACR=$(terraform -chdir=../terraform output -raw container_registry_login_server)
-az acr login --name "${ACR%%.*}"
-docker build -t "$ACR/maf-agent-harness:latest" .
-docker push "$ACR/maf-agent-harness:latest"
-```
+## Notes
 
-## Deploy as a Hosted Agent
-
-Set `AZURE_OPENAI_ENDPOINT` to the `foundry_project_endpoint`/account endpoint
-from the terraform outputs, then deploy with `azd` (using `agent.yaml`) or the
-Foundry SDK (`container_protocol_versions=[responses]`). The platform creates
-the agent's dedicated Entra identity and endpoint at deploy time.
+- `create_harness_agent`, `FoundryChatClient`, and `LocalShellTool` require the
+  current `agent-framework` (>= 1.9.0). They are **not** compatible with the
+  `azure-ai-agentserver-agentframework` Foundry Hosted Agent server wrapper,
+  which pins an older `agent-framework-core`. This starter therefore runs as a
+  local/console app rather than inside that hosting wrapper.
+- Some harness features used by the upstream sample (autonomous execute-mode
+  looping via `loop_should_continue`) are not yet in a released `agent-framework`
+  version, so they are omitted here.

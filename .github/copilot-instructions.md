@@ -2,18 +2,18 @@
 
 ## What this repository is
 
-This repo builds a **Microsoft Agent Framework (MAF) agent harness** that is
-packaged as a container and deployed as a **Microsoft Foundry Hosted Agent**.
-Supporting Azure infrastructure is provisioned with **Terraform**.
+This repo builds a **Microsoft Agent Framework (MAF) agent harness** on top of
+`create_harness_agent`, talking to an **Azure AI Foundry** project. Supporting
+Azure infrastructure is provisioned with **Terraform**.
 
 - Agent harness pattern: <https://devblogs.microsoft.com/agent-framework/agent-harness-in-agent-framework/>
-- Foundry Hosted Agents: <https://learn.microsoft.com/en-us/azure/foundry/agents/concepts/hosted-agents>
+- Harness sample (the starter is based on this): <https://github.com/microsoft/agent-framework/tree/main/python/samples/02-agents/harness>
 
 Repository layout:
 
-- `harness/` — the Python MAF harness (Foundry Hosted Agent, Responses protocol).
-  `main.py` builds the agent and calls `from_agent_framework(agent).run()`;
-  `Dockerfile`/`requirements.txt`/`agent.yaml` package and deploy it.
+- `harness/` — the Python MAF harness. `harness_agent.py` builds the agent with
+  `create_harness_agent` + `FoundryChatClient` + `LocalShellTool` and runs a lean
+  async REPL; `requirements.txt`/`.env.sample` configure it.
 - `terraform/` — Azure infrastructure (AI Foundry account + project + model
   deployment, ACR, storage, observability, agent identity, role assignments).
 
@@ -21,11 +21,11 @@ Repository layout:
 
 The system has two cooperating parts:
 
-1. **Agent harness (application code)** — A MAF agent that connects model
-   reasoning to real execution (shell/filesystem tools, approval flows, and
-   context compaction). Built with `agent-framework` (Python) or
-   `Microsoft.Agents.AI` (.NET). It is containerized and pushed to Azure
-   Container Registry, then run by Foundry Agent Service as a Hosted Agent.
+1. **Agent harness (application code)** — A MAF agent built with
+   `create_harness_agent` (Python `agent-framework`) that connects model
+   reasoning to real execution (shell tool + approval flows, todos, plan/execute
+   modes, web search, compaction). It talks to the Foundry project via
+   `FoundryChatClient` and runs as a local/console app.
 2. **Infrastructure (`terraform/`)** — Azure resources the harness needs: an AI
    Foundry account + project, managed identities, observability, storage, and
    networking. Foundry creates the agent's dedicated Entra identity and endpoint
@@ -33,25 +33,24 @@ The system has two cooperating parts:
 
 Key harness concepts to preserve when editing application code:
 
-- **Shell/filesystem tools run behind approval gates.** The harness uses
-  `LocalShellTool` from `agent-framework-tools` in `mode="stateless"` with
-  `approval_mode="always_require"` (stateless because a hosted agent serves many
-  isolated sessions; a persistent shell must not be shared across sessions).
-  Approval is the tool's real security boundary — never set
-  `approval_mode="never_require"` without `acknowledge_unsafe=True`.
-- **Context compaction** keeps long sessions within the token budget. The
-  harness wires `InMemoryHistoryProvider("memory", compaction_strategy=
-  SlidingWindowStrategy(...))` into `create_agent(context_providers=[...])`.
-  Don't remove compaction when adding long-running conversation features.
-- **Hosted Agent server.** `main.py` ends with
-  `from_agent_framework(agent).run()` (from `azure.ai.agentserver.agentframework`),
-  which serves the Responses protocol and a `/health` endpoint on port `8088`.
-- **Default to the Responses protocol.** Use Responses unless a webhook/custom
-  payload requires Invocations. The protocol set is declared in the agent
-  version definition (`agent.yaml` for azd, or `container_protocol_versions`
-  via SDK).
-- Hosted Agents run in per-session VM-isolated sandboxes with a persistent
-  `$HOME` and `/files`; treat session filesystem state as the persistence layer.
+- **Use `create_harness_agent`.** Build the agent with
+  `create_harness_agent(client=FoundryChatClient(...), shell_executor=LocalShellTool(...), ...)`
+  rather than hand-wiring providers. Tune `max_context_window_tokens` /
+  `max_output_tokens` to the deployed model.
+- **Shell/filesystem tools run behind approval gates.** The shell tool is wired
+  via `shell_executor=LocalShellTool(acknowledge_unsafe=True)`; the harness's
+  tool-approval flow still gates each command. The REPL surfaces
+  `function_approval_request` content as a `[y/N]` prompt and replies with
+  `request.to_function_approval_response(approved=...)`. Approval is the real
+  security boundary — keep it.
+- **Run with the lean REPL.** `harness_agent.py` streams `agent.run(..., stream=True,
+  session=session)` and prints `update.text`. There is no Textual UI and no
+  hosted-agent server wrapper.
+- **Version constraint.** `create_harness_agent` / `FoundryChatClient` /
+  `LocalShellTool` need `agent-framework >= 1.9.0`, which is incompatible with the
+  `azure-ai-agentserver-agentframework` Hosted Agent wrapper (it pins an older
+  `agent-framework-core`). Don't reintroduce that wrapper alongside the harness
+  API. Looping (`loop_should_continue`) is not yet in a released version.
 
 ## Terraform conventions (`terraform/`)
 
