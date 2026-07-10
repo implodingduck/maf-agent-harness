@@ -7,7 +7,10 @@ agent-framework==1.9.0
 # agent_framework_tools.shell. Required for create_harness_agent(shell_executor=...).
 agent-framework-tools==1.0.0a260424
 
-# Textual-based console UI used by the vendored harness console package.
+# Textual-based console UI. The harness drives the upstream `console` package
+# from the microsoft/agent-framework harness sample (referenced via the sparse
+# git submodule under external/agent-framework, not vendored). textual + rich are
+# that package's runtime dependencies. Run scripts/setup-console.sh once to fetch it.
 textual>=6.2.1
 rich>=13.7.1
 

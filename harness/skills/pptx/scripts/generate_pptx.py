@@ -256,6 +256,11 @@ def generate_pptx(data: dict[str, Any], output_path: str) -> str:
         slide = prs.slides.add_slide(prs.slide_layouts.get_by_name(best.layout_name))
         _populate_slide(slide, sc)
 
+    # Ensure the destination directory exists so callers can target output/ (or
+    # any nested folder) without pre-creating it.
+    parent = os.path.dirname(output_path)
+    if parent:
+        os.makedirs(parent, exist_ok=True)
     prs.save(output_path)
     return output_path
 
@@ -273,14 +278,14 @@ def _load_input(path: str | None) -> dict[str, Any]:
 def main() -> int:
     parser = argparse.ArgumentParser(description="Generate a .pptx from a JSON slide description.")
     parser.add_argument("--input", "-i", default="-", help="Input JSON file, or '-' for stdin (default).")
-    parser.add_argument("--output", "-o", default=None, help="Output .pptx path (default: generated_presentation_<ts>.pptx).")
+    parser.add_argument("--output", "-o", default=None, help="Output .pptx path (default: output/generated_presentation_<ts>.pptx).")
     parser.add_argument("--template", "-t", default=None, help="Template .pptx (overrides any 'template' in the JSON).")
     args = parser.parse_args()
 
     data = _load_input(args.input)
     if args.template:
         data["template"] = args.template
-    output_path = args.output or f"generated_presentation_{int(time.time())}.pptx"
+    output_path = args.output or os.path.join("output", f"generated_presentation_{int(time.time())}.pptx")
 
     saved = generate_pptx(data, output_path)
     print(saved)  # stdout: the path, for easy capture by callers

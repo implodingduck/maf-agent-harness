@@ -13,6 +13,10 @@ __pycache__/
 .venv/
 venv/
 
+# Generated artifacts from harness runs / skills (research briefs, decks, scratch
+# files). Kept out of commits so test runs don't clutter git.
+output/
+
 # .tfstate files
 *.tfstate
 *.tfstate.*

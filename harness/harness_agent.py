@@ -1,16 +1,22 @@
-"""MAF agent harness — a lean, shell-enabled harness agent with a simple REPL.
+"""MAF agent harness — a shell-enabled harness agent with a Textual console UI.
 
 A starting point inspired by the Microsoft Agent Framework harness sample
-(``microsoft/agent-framework/python/samples/02-agents/harness``), trimmed down to
-the essentials: ``create_harness_agent`` + ``FoundryChatClient`` + a local shell
-tool, driven by a minimal async read-eval-print loop (no Textual UI).
+(``microsoft/agent-framework/python/samples/02-agents/harness``): ``create_harness_agent``
++ ``FoundryChatClient`` + a local shell tool, driven by the sample's rich
+Textual-based console (``run_agent_async`` + ``build_default_observers``).
+
+Rather than vendoring the console package, we reference it directly from the
+upstream repo, checked out sparsely as a git submodule under
+``external/agent-framework`` (pinned to the ``python-1.9.0`` tag). Run
+``scripts/setup-console.sh`` once to materialize it, then it is importable as the
+top-level ``console`` package (see ``_CONSOLE_PARENT`` below).
 
 ``create_harness_agent`` assembles a batteries-included agent: automatic tool
 calling, per-service-call history persistence, context-window compaction, a todo
 list for planning, plan/execute mode tracking, web search, and tool-approval
 handling. We additionally wire a ``LocalShellTool`` so the agent can run shell
 commands and probe its environment; every command is gated behind an approval
-prompt that this REPL surfaces to you on the terminal.
+prompt the console surfaces via its ``ToolApprovalObserver``.
 
 Environment variables:
     FOUNDRY_PROJECT_ENDPOINT — Azure AI Foundry project endpoint URL, e.g.
@@ -22,8 +28,9 @@ Authentication:
     DefaultAzureCredential for managed-identity environments.
 
 Usage:
+    scripts/setup-console.sh   # one-time: fetch the console submodule
     python harness_agent.py
-    Type a message and press Enter. Commands: /exit (or /quit) to leave.
+    Type a message and press Enter. Use the console's on-screen help for commands.
 """
 
 import asyncio
@@ -31,7 +38,27 @@ import os
 import sys
 from pathlib import Path
 
-from agent_framework import Message, create_harness_agent
+# The upstream harness ``console`` package is referenced (not vendored) from a
+# sparse git submodule. Put its parent directory on ``sys.path`` so ``import
+# console`` resolves to it before we import anything from it below.
+_CONSOLE_PARENT = (
+    Path(__file__).resolve().parent.parent
+    / "external"
+    / "agent-framework"
+    / "python"
+    / "samples"
+    / "02-agents"
+    / "harness"
+)
+if not (_CONSOLE_PARENT / "console" / "__init__.py").exists():
+    sys.exit(
+        "The upstream 'console' package is missing. Initialize the sparse "
+        "submodule first:\n    scripts/setup-console.sh\n"
+        f"(expected it at {_CONSOLE_PARENT / 'console'})"
+    )
+sys.path.insert(0, str(_CONSOLE_PARENT))
+
+from agent_framework import create_harness_agent
 from agent_framework.foundry import FoundryChatClient
 from agent_framework_tools.shell import (
     LocalShellTool,
@@ -39,6 +66,7 @@ from agent_framework_tools.shell import (
     ShellEnvironmentProviderOptions,
 )
 from azure.identity import AzureCliCredential
+from console import build_default_observers, run_agent_async
 from dotenv import load_dotenv
 
 # Token budgets configure compaction; tune to the deployed model's context window.
@@ -74,57 +102,11 @@ your work rather than relying on memory alone.
   bombs) and refuse if asked to.
 - Summarize command output for the user instead of dumping large blobs.
 - Verify claims and results with the tools available to you.
+- Write any files you generate (reports, briefs, decks, scratch/intermediate
+  files) into the `output/` directory in the current working directory, creating
+  it if needed. `output/` is git-ignored so generated artifacts stay out of
+  commits. Do not scatter generated files across the repo.
 """
-
-
-def _tool_name(content) -> str:
-    """Best-effort readable name for a function/approval content item."""
-    fc = getattr(content, "function_call", None) or content
-    name = getattr(fc, "name", None)
-    return str(name) if name else "tool"
-
-
-async def _prompt(text: str) -> str:
-    """Read a line from stdin without blocking the event loop."""
-    return (await asyncio.to_thread(input, text)).strip()
-
-
-async def _run_turn(agent, session, user_text: str) -> None:
-    """Run one user turn to completion, surfacing shell approval prompts."""
-    # First pass sends the user's text; later passes send approval responses.
-    messages: list | str = user_text
-
-    while True:
-        approval_requests: list = []
-        printed_any = False
-
-        stream = agent.run(messages, stream=True, session=session)
-        async for update in stream:
-            for content in getattr(update, "contents", None) or []:
-                ctype = getattr(content, "type", None)
-                if ctype == "function_call":
-                    print(f"\n  → calling {_tool_name(content)}...", flush=True)
-                elif ctype == "function_approval_request":
-                    approval_requests.append(content)
-            text = getattr(update, "text", None)
-            if text:
-                print(text, end="", flush=True)
-                printed_any = True
-
-        if printed_any:
-            print()
-
-        if not approval_requests:
-            return
-
-        # Surface each pending shell/tool approval to the user, then re-run with
-        # the approval responses so the agent can continue.
-        responses = []
-        for request in approval_requests:
-            answer = await _prompt(f"🔐 Approve `{_tool_name(request)}`? [y/N] ")
-            approved = answer.lower() in ("y", "yes")
-            responses.append(request.to_function_approval_response(approved=approved))
-        messages = [Message(role="user", contents=responses)]
 
 
 async def main() -> None:
@@ -170,23 +152,20 @@ async def main() -> None:
                 )
             ],
         )
-        session = agent.create_session()
 
-        print("🤖 MAF Agent Harness — type a task, or /exit to quit.\n")
-        while True:
-            try:
-                user_text = await _prompt("you> ")
-            except (EOFError, KeyboardInterrupt):
-                print()
-                break
-            if not user_text:
-                continue
-            if user_text.lower() in ("/exit", "/quit"):
-                break
-            try:
-                await _run_turn(agent, session, user_text)
-            except Exception as ex:  # noqa: BLE001 - surface errors, keep REPL alive
-                print(f"\n❌ {ex.__class__.__name__}: {ex}", file=sys.stderr)
+        # Hand off to the upstream Textual console. build_default_observers()
+        # wires streaming text, tool-call display, token usage, reasoning, and —
+        # importantly — the ToolApprovalObserver, which surfaces each shell
+        # command as an interactive approval prompt (our security boundary).
+        await run_agent_async(
+            agent,
+            session=agent.create_session(),
+            observers=build_default_observers(),
+            title="🤖 MAF Agent Harness",
+            placeholder="Type a task and press Enter…",
+            max_context_window_tokens=MAX_CONTEXT_WINDOW_TOKENS,
+            max_output_tokens=MAX_OUTPUT_TOKENS,
+        )
 
 
 if __name__ == "__main__":

@@ -19,19 +19,24 @@ required packages installed is exported as `$MAF_PYTHON`. Use the **shell tool**
 to run the generator with that interpreter (do not try to execute it through the
 skill system):
 
-1. Write the slide description to a JSON file, e.g. `slides.json`.
+1. Write the slide description to a JSON file under the git-ignored `output/`
+   directory, e.g. `output/slides.json` (or pipe JSON via stdin with `-i -` to
+   avoid an intermediate file).
 2. Run the generator:
 
    ```bash
    "$MAF_PYTHON" "$MAF_PPTX_SKILL_DIR/scripts/generate_pptx.py" \
      --input slides.json \
-     --output presentation.pptx \
+     --output output/presentation.pptx \
      --template "$MAF_PPTX_SKILL_DIR/assets/template2.pptx"
    ```
 
    - `--input`/`-i`: path to the JSON file, or `-` to read JSON from stdin.
-   - `--output`/`-o`: output `.pptx` path (defaults to
-     `generated_presentation_<timestamp>.pptx` in the current directory).
+   - `--output`/`-o`: output `.pptx` path. Put generated decks under the
+     `output/` directory (git-ignored) to keep the repo clean, e.g.
+     `output/presentation.pptx`. Defaults to
+     `output/generated_presentation_<timestamp>.pptx`. The parent directory is
+     created automatically.
    - `--template`/`-t`: template `.pptx`. Omit to use python-pptx's built-in
      default template, or point at the bundled `assets/template2.pptx` for a
      richer set of layouts (Title Slide, Agenda, Section Break, Two Content,
